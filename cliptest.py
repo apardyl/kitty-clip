@@ -5,6 +5,7 @@ from sklearn.linear_model import LogisticRegression
 from torch.utils.data import DataLoader
 from torchvision import datasets
 from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
 
 # Load the model
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -12,11 +13,16 @@ model, preprocess = clip.load('ViT-B/32', device)
 
 # Prepare the inputs
 dataset = datasets.ImageFolder('archive/images', transform=preprocess)
-train_set, val_set = torch.utils.data.random_split(dataset, [50470, 12617])
+total_num = 63087
+ratio = 0.01
+val_num = int(total_num * ratio)
+train_set, val_set = torch.utils.data.random_split(dataset, [total_num - val_num, val_num])
 
 
 def logistic_regression():
     # 48%
+
+    writer = SummaryWriter()
 
     def get_features(dataset):
         all_features = []
@@ -32,8 +38,12 @@ def logistic_regression():
         return torch.cat(all_features).cpu().numpy(), torch.cat(all_labels).cpu().numpy()
 
     # Calculate the image features
-    train_features, train_labels = get_features(train_set)
+    #train_features, train_labels = get_features(train_set)
     test_features, test_labels = get_features(val_set)
+    #print(test_features.shape)
+    writer.add_embedding(test_features, [dataset.classes[x] for x in test_labels])
+    writer.close()
+    raise Exception()
 
     # Perform logistic regression
     classifier = LogisticRegression(random_state=0, C=0.316, max_iter=1000, verbose=1)
@@ -63,8 +73,11 @@ def zero_shot():
             image_features /= image_features.norm(dim=-1, keepdim=True)
             text_features /= text_features.norm(dim=-1, keepdim=True)
             similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
-            values, indices = similarity[0].topk(1)
-            actual_labels.append(indices[0].cpu())
+            values, indices = similarity[0].topk(3)
+            if int(class_id) in list(indices):
+                actual_labels.append(class_id)
+            else:
+                actual_labels.append(-1)
             expected_labels.append(class_id)
 
     expected_t = torch.tensor(expected_labels)
@@ -73,5 +86,5 @@ def zero_shot():
     print('Zero shot accuracy: {:.2f}%'.format(acc * 100))
 
 
-zero_shot()
+#zero_shot()
 logistic_regression()
